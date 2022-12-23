@@ -208,4 +208,66 @@ public class MyTest {
         then:
         skipped ':test'
     }
+
+    @Issue("https://github.com/gradle/gradle/issues/10694")
+    def doesNotSwallowUnnecessaryStubbingMockitoException() {
+        given:
+        buildFile << """
+            plugins {
+                id("java-library")
+            }
+            ${mavenCentralRepository()}
+            test {
+                useJUnit {
+                    $categoryDeclaration
+                }
+            }
+            dependencies {
+                testImplementation("junit:junit:4.13.2")
+                testImplementation("org.mockito:mockito-core:4.9.0")
+            }
+        """
+        file("src/test/java/IncludedCategory.java") << """
+            public interface IncludedCategory {
+            }
+        """
+        file("src/test/java/ExcludedCategory.java") << """
+            public interface ExcludedCategory {
+            }
+        """
+        file("src/test/java/MyTest.java") << """
+            import org.junit.Test;
+            import org.junit.runner.RunWith;
+            import org.mockito.Mock;
+            import org.mockito.Mockito;
+            import org.mockito.junit.MockitoJUnitRunner;
+            import org.junit.experimental.categories.Category;
+
+            interface Foo {
+                String bar();
+            }
+
+            @RunWith(MockitoJUnitRunner.class)
+            @Category(IncludedCategory.class)
+            public class MyTest {
+
+                @Mock
+                private Foo foo;
+
+                @Test
+                public void test() {
+                    Mockito.when(foo.bar()).thenReturn("baz");
+                }
+            }
+        """
+
+        when:
+        fails(":test")
+
+        then:
+        outputContains("MyTest > unnecessary Mockito stubbings FAILED")
+
+        where:
+        categoryDeclaration << ["", "includeCategories 'IncludedCategory'", "excludeCategories 'ExcludedCategory'"]
+    }
 }
